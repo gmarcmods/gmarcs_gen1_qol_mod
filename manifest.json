@@ -1,23 +1,37 @@
 {
   "id": "gmarcs_gen1_qol_mod",
   "name": "Gmarc's Gen 1 QoL Mod",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",
   "category": "QOL",
   "game_version": ">=0.1.37 <2.0.0",
   "priority": 300,
-  "permissions": ["engine_internals"],
+  "permissions": [
+    "engine_internals"
+  ],
   "dependencies": [],
   "optional_dependencies": [],
   "conflicts": [
-    "unique_menu_icons", "touch_tools", "RUN_MODE", "quality_of_life",
-    "gen3_box", "useful_bag", "reusable_machines", "trade_evolutions_gen1",
-    "moveset_plus_gen1", "relearn_moves", "widescreen_menus_gen1", "hm_anywhere"
+    "RUN_MODE",
+    "all_encounters_gen1",
+    "gen3_box",
+    "hm_anywhere",
+    "moveset_plus_gen1",
+    "quality_of_life",
+    "relearn_moves",
+    "reusable_machines",
+    "touch_tools",
+    "trade_evolutions_gen1",
+    "unique_menu_icons",
+    "useful_bag",
+    "widescreen_menus_gen1"
   ],
   "affects_link": false,
   "github": "gmarcmods/gmarcs_gen1_qol_mod",
-  "description": "One install for Red, Blue and Yellow: icons, touch buttons, run mode, the Gen II EXP bar and Pack, Gen 3 boxes, useful bag, reusable TMs, trade evolutions by level, the five-move comparison, move relearn, widescreen menus, HM anywhere, plus a caught icon and place names.",
-  "games": ["gen1"]
+  "description": "One install for Red, Blue and Yellow: icons, touch buttons, run mode, the Gen II EXP bar and Pack, Gen 3 boxes, useful bag, reusable TMs, trade evolutions by level, the five-move comparison, move relearn, widescreen menus, HM anywhere, all encounters from the three games, plus a caught icon and place names.",
+  "games": [
+    "gen1"
+  ]
 }

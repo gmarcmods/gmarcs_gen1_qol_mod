@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+
+- **All Encounters** added: every route carries the union of Red, Blue and
+  Yellow's wild tables, with a RED / BLUE / YELLOW / ALL option.
+
 ## 1.0.0
 
 First release. One install for Red, Blue and Yellow:

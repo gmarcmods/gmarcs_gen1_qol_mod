@@ -2,7 +2,7 @@
   "product": {
     "id": "gmarcs_gen1_qol_mod",
     "name": "Gmarc's Gen 1 QoL Mod",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "generated_by": "tools/assemble.py",
   "features": [
@@ -69,6 +69,15 @@
       "priority": 100,
       "commit": "a7d2c47da02a",
       "digest": "e670247deed8c40c1a72196b466ee021ec6418e1b0029ef4ea5fe0ed1acf8313"
+    },
+    {
+      "name": "all-encounters",
+      "source": "gen1/all-encounters",
+      "version": "1.0.0",
+      "options": null,
+      "priority": 120,
+      "commit": null,
+      "digest": "59d9eee9fa0771899ac9fb66f5599934d0753f4c1cbe563ec91511c35b9c833f"
     },
     {
       "name": "reusable-machines",

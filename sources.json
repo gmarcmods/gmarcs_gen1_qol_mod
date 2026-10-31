@@ -2,7 +2,7 @@
   "product": {
     "id": "gmarcs_gen1_qol_mod",
     "name": "Gmarc's Gen 1 QoL Mod",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "features": [
     {
@@ -54,6 +54,12 @@
       "name": "useful-bag",
       "source": "gen1/useful-bag",
       "priority": 100
+    },
+    {
+      "name": "all-encounters",
+      "source": "gen1/all-encounters",
+      "priority": 120,
+      "notes": "replaces game.data.encounters with the chosen edition or the union"
     },
     {
       "name": "reusable-machines",

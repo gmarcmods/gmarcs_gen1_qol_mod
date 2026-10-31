@@ -16,6 +16,7 @@ Twelve quality of life mods for Red, Blue and Yellow, packed into one install.
 - **Move Relearn** — relearn any move a Pokémon could have learned.
 - **Widescreen Menus** — party and summary use the whole screen on wide windows.
 - **HM Anywhere** — use owned HMs and field TMs without teaching them.
+- **All Encounters** — each route carries the wild Pokémon of Red, Blue and Yellow together; choose RED, BLUE, YELLOW or ALL.
 
 Everything is optional; each feature has its own toggle in OPTIONS.
 
