@@ -1,5 +1,6 @@
 # Gmarc's Gen 1 QoL Mod
 
+A [gen1recomp](https://github.com/bryanthaboi/gen1recomp) mod.
 Twelve quality of life mods for Red, Blue and Yellow, packed into one install.
 
 ## Features
