@@ -1,0 +1,133 @@
+{
+  "product": {
+    "id": "gmarcs_gen1_qol_mod",
+    "name": "Gmarc's Gen 1 QoL Mod",
+    "version": "1.0.0"
+  },
+  "generated_by": "tools/assemble.py",
+  "features": [
+    {
+      "name": "unique-menu-icons",
+      "source": "gen1/unique-menu-icons",
+      "version": "1.5.0",
+      "options": {
+        "icon_color_mode": {
+          "label": "ICON COLORS",
+          "help": "ORIGINAL uses the game palette, GBC RED is the Gen 2 red duotone, UNIQUE COLORS gives every Pok\u00e9mon its own colours."
+        }
+      },
+      "priority": 0,
+      "commit": "b065d77fafb7",
+      "digest": "4e1252e56c9a5463e9e66432343949c615bce9f2e56a85b97d4a1874d8ad552f"
+    },
+    {
+      "name": "touch-tools",
+      "source": "shared/touch-tools",
+      "version": "1.2.2",
+      "options": null,
+      "priority": 30,
+      "commit": "b08d3bd4629e",
+      "digest": "f661114bd1dabab76bd9e78cc61efd79ea2d4eb8c8b1f646192c1032c0494339"
+    },
+    {
+      "name": "run-mode",
+      "source": "gen1/run-mode",
+      "version": "1.2.0",
+      "options": {
+        "enabled": {
+          "label": "RUN",
+          "help": "Run on the overworld instead of walking."
+        }
+      },
+      "priority": 40,
+      "commit": "d25586fbc62f",
+      "digest": "9b19c087aa169c01495ccd125700ffb93ecae8bed0ffd0b5ea48ec7a07ee57b9"
+    },
+    {
+      "name": "quality-of-life",
+      "source": "shared/quality-of-life",
+      "version": "1.4.0",
+      "options": null,
+      "priority": 90,
+      "commit": "82342ab58cb2",
+      "digest": "f1f4700d0d0c6a73dd9fc2488e5f430b69fb6854609bd0ab73a176b97149891f"
+    },
+    {
+      "name": "gen3-box",
+      "source": "gen1/gen3-box",
+      "version": "1.27.4",
+      "options": null,
+      "priority": 100,
+      "commit": "8a55ab66e1a2",
+      "digest": "ae572ee7ef6035a3986b37fda4928e43895dca247489e9eb34b046237f5dba22"
+    },
+    {
+      "name": "useful-bag",
+      "source": "gen1/useful-bag",
+      "version": "2.6.5",
+      "options": null,
+      "priority": 100,
+      "commit": "a7d2c47da02a",
+      "digest": "e670247deed8c40c1a72196b466ee021ec6418e1b0029ef4ea5fe0ed1acf8313"
+    },
+    {
+      "name": "reusable-machines",
+      "source": "gen1/reusable-machines",
+      "version": "1.0.1",
+      "options": null,
+      "priority": 130,
+      "commit": "620b2b44791c",
+      "digest": "3b12b2b53a14f25993136aed897de828242c1c54036e767078d36a47d13367cc"
+    },
+    {
+      "name": "trade-evolutions",
+      "source": "gen1/trade-evolutions",
+      "version": "1.0.0",
+      "options": {
+        "level": {
+          "label": "TRADE EVO LEVEL",
+          "help": "Kadabra, Machoke, Graveler and Haunter evolve at this level."
+        }
+      },
+      "priority": 140,
+      "commit": "3bac12123f4b",
+      "digest": "8027ce09c59b8d4a62d6d3e9d85eaf8813c340165f91a9d1ccdf2916a5d02927"
+    },
+    {
+      "name": "moveset-plus",
+      "source": "gen1/moveset-plus",
+      "version": "1.0.0",
+      "options": null,
+      "priority": 250,
+      "commit": "759c4fbdd194",
+      "digest": "964f5b135c125b2d809468bd32ea4c6a7904c85830f51c08da4ae90ff158d922"
+    },
+    {
+      "name": "move-relearn",
+      "source": "gen1/move-relearn",
+      "version": "1.7.0",
+      "options": null,
+      "priority": 260,
+      "commit": "40769257a69f",
+      "digest": "02bc8f1d40014fdfecc97c1939131faf21d6757002e7cbae149ff433e065496f"
+    },
+    {
+      "name": "widescreen-menus",
+      "source": "gen1/widescreen-menus",
+      "version": "1.0.0",
+      "options": null,
+      "priority": 300,
+      "commit": "43bcb8185acf",
+      "digest": "f0babed2804ff76f45e57725fb1270afd8b8122d9bd6f7a543010163324d7497"
+    },
+    {
+      "name": "hm-anywhere",
+      "source": "gen1/hm-anywhere",
+      "version": "1.2.0",
+      "options": null,
+      "priority": 610,
+      "commit": "d4c4786d5743",
+      "digest": "f6619cc4c513cf605d6715f829dd4ff84d055a88db1508c75575140a9bbcf605"
+    }
+  ]
+}

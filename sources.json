@@ -1,0 +1,96 @@
+{
+  "product": {
+    "id": "gmarcs_gen1_qol_mod",
+    "name": "Gmarc's Gen 1 QoL Mod",
+    "version": "1.0.0"
+  },
+  "features": [
+    {
+      "name": "unique-menu-icons",
+      "source": "gen1/unique-menu-icons",
+      "priority": 0,
+      "patches": [
+        {
+          "file": "main.lua",
+          "find": "local DEFAULT_MODE = \"original\"",
+          "replace": "local DEFAULT_MODE = \"unique_colors\""
+        }
+      ],
+      "option_labels": {
+        "icon_color_mode": {
+          "label": "ICON COLORS",
+          "help": "ORIGINAL uses the game palette, GBC RED is the Gen 2 red duotone, UNIQUE COLORS gives every Pok\u00e9mon its own colours."
+        }
+      }
+    },
+    {
+      "name": "touch-tools",
+      "source": "shared/touch-tools",
+      "priority": 30
+    },
+    {
+      "name": "run-mode",
+      "source": "gen1/run-mode",
+      "priority": 40,
+      "option_labels": {
+        "enabled": {
+          "label": "RUN",
+          "help": "Run on the overworld instead of walking."
+        }
+      }
+    },
+    {
+      "name": "quality-of-life",
+      "source": "shared/quality-of-life",
+      "priority": 90,
+      "notes": "EXP bar, Gen II pack, field prompts, caught icon, place names"
+    },
+    {
+      "name": "gen3-box",
+      "source": "gen1/gen3-box",
+      "priority": 100
+    },
+    {
+      "name": "useful-bag",
+      "source": "gen1/useful-bag",
+      "priority": 100
+    },
+    {
+      "name": "reusable-machines",
+      "source": "gen1/reusable-machines",
+      "priority": 130
+    },
+    {
+      "name": "trade-evolutions",
+      "source": "gen1/trade-evolutions",
+      "priority": 140,
+      "option_labels": {
+        "level": {
+          "label": "TRADE EVO LEVEL",
+          "help": "Kadabra, Machoke, Graveler and Haunter evolve at this level."
+        }
+      }
+    },
+    {
+      "name": "moveset-plus",
+      "source": "gen1/moveset-plus",
+      "priority": 250,
+      "notes": "loads after the party and learn screens it augments"
+    },
+    {
+      "name": "move-relearn",
+      "source": "gen1/move-relearn",
+      "priority": 260
+    },
+    {
+      "name": "widescreen-menus",
+      "source": "gen1/widescreen-menus",
+      "priority": 300
+    },
+    {
+      "name": "hm-anywhere",
+      "source": "gen1/hm-anywhere",
+      "priority": 610
+    }
+  ]
+}

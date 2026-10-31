@@ -1,0 +1,768 @@
+-- Move Relearn: adds a RELEARN entry to the bottom of the field party-menu
+-- submenu (after SWITCH) that lets a mon relearn any move from its species
+-- movelist it has reached the level for.  A full moveset can replace any
+-- existing move, including HMs, in both this flow and the vanilla
+-- level-up/TM move-learning flow.  Battle never sees the RELEARN option.
+-- The same hook and registered screen run on both Gen 1 and Gold; the data
+-- adapter below accepts both learnset shapes.  FireRed / LeafGreen (Gen 3)
+-- has no party-submenu hook, so it gets its own adapter at the bottom of
+-- this file that opens the game's native Move Relearner screen instead.
+--
+-- Wiring (Gen 1 / Gold): the ui.party.submenu hook receives the vanilla item list after it
+-- is built on both generations; hook-injected entries carry an onSelect
+-- callback instead of an action id, so the vanilla update handles the rest.
+-- The learn flow is a screen registered in the screens registry and pushed
+-- over the still-open party menu through the public mod.ui facade.
+
+local Strings = require("src.core.Strings")
+local Sound = require("src.core.Sound")
+
+-- The public UI facade is bound when the entry function runs.  Keeping this
+-- out of file-scope engine requires lets Gold resolve its own screen stack and
+-- keeps the screen registration generation-neutral.
+local Ui
+
+-- Vanilla HM set (data/moves/hm_moves.asm, IsMoveHM); the runtime gate is
+-- data-driven off constants.hmMoves (Data.lua:31) and falls back here when
+-- data is absent (headless fixtures without the registry).
+local HM_MOVES = {
+  CUT = true, FLY = true, SURF = true, STRENGTH = true, FLASH = true,
+}
+
+-- Gold also treats WATERFALL and WHIRLPOOL as HM moves.  They are not present
+-- in Gen 1's constants.hmMoves default, so they need a generation-aware
+-- fallback even when a Gold dataset inherits that shared default table.
+local GEN2_HM_MOVES = {
+  CUT = true, FLY = true, SURF = true, STRENGTH = true, FLASH = true,
+  WATERFALL = true, WHIRLPOOL = true,
+}
+
+-- Pure (mod.exports.isHM for headless tests): the engine's forget gate
+-- (the same set MoveLearnMenu applies via IsMoveHM).  Reads the live
+-- constants.hmMoves list -- so a mod or imported dataset that extends the
+-- HM set gates here too -- and falls back to the vanilla five.
+local function isHM(data, moveId)
+  local constants = data and data.constants
+  if constants and constants.generation == 2 and GEN2_HM_MOVES[moveId] then
+    return true
+  end
+  local hm = constants and constants.hmMoves
+  if hm then
+    for _, id in ipairs(hm) do
+      if id == moveId then return true end
+    end
+    return false
+  end
+  return HM_MOVES[moveId] == true
+end
+
+-- Pure (mod.exports.hmForgettable for headless tests): HM moves are
+-- intentionally replaceable in this mod's relearn flow.  QoL Toggles may
+-- still control the separate level-up flow, but it is not required here.
+local function hmForgettable(_)
+  return true
+end
+
+-- Pure (mod.exports.buildRelearnable for headless tests): the moves a mon
+-- may relearn -- level-1 moves plus learnset entries at or below its
+-- level, in movelist order, deduped, minus what it already knows.  Gen 1
+-- calls the rows `learnset`; Gold calls them `levelMoves` and includes its
+-- level-1 moves in that ordered list.
+-- Egg moves follow the level-up moves with no level gate, flagged `egg`.
+-- Returns { level, move, name, pp, egg }.
+local eggMoveSpecies
+
+local function buildRelearnable(data, def, mon)
+  local out, seen, known = {}, {}, {}
+  for _, mv in ipairs(mon.moves or {}) do known[mv.id] = true end
+  local function add(level, move, egg)
+    if known[move] or seen[move] then return end
+    seen[move] = true
+    local mdef = data and data.moves and data.moves[move]
+    out[#out + 1] = {
+      level = level,
+      move = move,
+      name = (mdef and mdef.name) or move,
+      pp = (mdef and mdef.pp) or 0,
+      egg = egg or nil,
+    }
+  end
+  for _, id in ipairs(def.level1Moves or {}) do add(1, id) end
+  local rows = def.learnset or def.levelMoves or {}
+  for _, entry in ipairs(rows) do
+    if entry.level and entry.level <= mon.level then add(entry.level, entry.move) end
+  end
+  for _, species in ipairs(eggMoveSpecies(data, mon.species or def.id)) do
+    local sdef = species == mon.species and def
+      or (data and data.pokemon and data.pokemon[species])
+    for _, id in ipairs((sdef and sdef.eggMoves) or {}) do add(0, id, true) end
+  end
+  return out
+end
+
+-- The species whose egg-move lists a mon may draw on: itself, then each
+-- pre-evolution back to the base form.  Gold keeps egg moves on the base
+-- form only (data/pokemon/egg_moves.asm), so an evolved mon needs the walk
+-- back; Gen 1 has no egg moves and every list comes out empty.  A
+-- pre-evolution is the species whose evolution rows lead INTO this one
+-- (Gold writes `into`, Gen 1 `species`); keys are scanned in sorted order so
+-- the answer never depends on table iteration order.
+function eggMoveSpecies(data, species)
+  local out = {}
+  local pokemon = data and data.pokemon
+  if species == nil then return out end
+  out[1] = species
+  if type(pokemon) ~= "table" then return out end
+  local keys = {}
+  for key in pairs(pokemon) do keys[#keys + 1] = key end
+  table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+  local visited = { [species] = true }
+  local current = species
+  for _ = 1, 3 do
+    local previous
+    for _, key in ipairs(keys) do
+      local def = pokemon[key]
+      for _, evo in ipairs((type(def) == "table" and def.evolutions) or {}) do
+        if (evo.into or evo.species) == current then previous = key break end
+      end
+      if previous then break end
+    end
+    if previous == nil or visited[previous] then break end
+    visited[previous] = true
+    out[#out + 1] = previous
+    current = previous
+  end
+  return out
+end
+
+-- Pure (mod.exports.applyMove for headless tests): add a move with full
+-- base PP.  A full moveset replaces slot `replace` (1-4) and returns the
+-- dropped move id; otherwise returns nil.  No-op when already known.
+local function applyMove(data, mon, moveId, replace)
+  for _, mv in ipairs(mon.moves or {}) do
+    if mv.id == moveId then return nil end
+  end
+  local mdef = data and data.moves and data.moves[moveId]
+  local pp = (mdef and mdef.pp) or 0
+  -- Gold tracks maxPp alongside pp.  The extra field is harmless on Gen 1
+  -- and keeps a relearned move compatible with both save models.
+  local slot = { id = moveId, pp = pp, maxPp = pp }
+  mon.moves = mon.moves or {}
+  if #mon.moves < 4 then
+    mon.moves[#mon.moves + 1] = slot
+    return nil
+  end
+  if not replace then return nil end
+  local old = mon.moves[replace]
+  mon.moves[replace] = slot
+  return old and old.id
+end
+
+-- The engine's normal level-up/TM screen has the same four-slot replacement
+-- UI, but its vanilla update rejects HMs before replacing the selected slot.
+-- Keep its enter/draw/finish behavior and replace only that input method so
+-- RELEARN and ordinary move learning share the same HM policy.
+local function unlockedMoveLearn(game, mon, newMoveId, onDone, learnedSound)
+  -- Required lazily: this is a Gen 1 / Gold screen and a FireRed boot never
+  -- reaches it.
+  local VanillaMoveLearnMenu = require("src.ui.MoveLearnMenu")
+  local screen = VanillaMoveLearnMenu.new(game, mon, newMoveId, onDone,
+                                          learnedSound)
+  function screen:update(_dt)
+    if not self.selecting then return end
+    local input = self.game.input
+    local n = #self.mon.moves
+    if input:wasPressed("up") then
+      self.index = self.index > 1 and self.index - 1 or n
+    elseif input:wasPressed("down") then
+      self.index = self.index < n and self.index + 1 or 1
+    elseif input:wasPressed("b") then
+      self:confirmAbandon()
+    elseif input:wasPressed("a") then
+      local old = self.mon.moves[self.index]
+      if not old then return end
+      local mdef = self.game.data.moves[self.newMoveId]
+      self.mon.moves[self.index] = { id = self.newMoveId, pp = mdef.pp }
+      self.forgot = self.game.data.moves[old.id].name
+      self:finish(true)
+    end
+  end
+  return screen
+end
+
+-- Pure (mod.exports.injectSubmenu for headless tests): append the RELEARN
+-- entry at the bottom of the field party submenu, after SWITCH.  Battle
+-- keeps the vanilla list.  The entry is always present out of battle so
+-- the feature is discoverable; a mon with nothing left to learn reads "No
+-- moves to relearn." in the flow screen instead of hiding the option.
+local function injectSubmenu(data, items, mon, ctx)
+  if ctx and ctx.battle then return items end
+  for _, e in ipairs(items) do
+    if e.relearn then return items end
+  end
+  local entry = {
+    label = Strings("RELEARN"),
+    relearn = true,
+    onSelect = function(selMon, game)
+      Ui.push(game, "MoveRelearn", selMon)
+    end,
+  }
+  -- RELEARN goes at the bottom of the list, after SWITCH (SWITCH keeps the
+  -- second slot).  Appending is independent of any engine row ordering, so
+  -- the entry can never land between other options.
+  items[#items + 1] = entry
+  return items
+end
+
+-- ---------- the learn flow screen (over the still-open party menu) ----------
+
+local MoveRelearn = {}
+MoveRelearn.__index = MoveRelearn
+
+local CURSOR = 0xED
+local ROWS = 5 -- forget-list geometry from MoveLearnMenu: 4 moves + CANCEL
+-- Hold-to-scroll pacing in seconds (the ListMenu keyRepeat: REPEAT_DELAY
+-- 16 / REPEAT_RATE 4 fixed frames at 60fps).  Declared before navRepeat so
+-- the function closes over the locals (a later local is invisible to it).
+local REPEAT_DELAY = 16 / 60
+local REPEAT_RATE = 4 / 60
+
+function MoveRelearn.new(game, mon)
+  local self = setmetatable({}, MoveRelearn)
+  self.game = game
+  self.mon = mon
+  local def = game.data and game.data.pokemon[mon.species]
+  self.list = def and buildRelearnable(game.data, def, mon) or {}
+  self.index = 1
+  self.scroll = 0
+  self.tick = 0
+  self.hold = { up = 0, down = 0 } -- hold-to-scroll timers (navRepeat)
+  -- nil, or { move, index } while choosing a slot to replace
+  self.forgetting = nil
+  return self
+end
+
+function MoveRelearn:monName()
+  return self.mon.nickname or self.game.data.pokemon[self.mon.species].name
+end
+
+function MoveRelearn:finish(message)
+  -- pop the screen first, then the message reads over the party menu
+  self.game.stack:pop()
+  local TextBox = Ui.TextBox
+  self.game.stack:push(TextBox.new(self.game, message))
+end
+
+-- Hold-to-scroll (the ListMenu keyRepeat pacing: REPEAT_DELAY 16 fixed
+-- frames, then REPEAT_RATE 4, at 60fps).  One step on the press edge,
+-- then repeat while the key stays down.  `step` moves the cursor one row
+-- (closures below own the wrap-around).
+function MoveRelearn:navRepeat(dt, dir, step)
+  local input = self.game.input
+  if input:wasPressed(dir) then
+    self.hold[dir] = 0
+    step()
+    return
+  end
+  if input.isDown and input:isDown(dir) then
+    self.hold[dir] = self.hold[dir] + (dt or 0)
+    while self.hold[dir] >= REPEAT_DELAY do
+      step()
+      self.hold[dir] = self.hold[dir] - REPEAT_RATE
+    end
+  else
+    self.hold[dir] = 0
+  end
+end
+
+-- Cursor/A-accept are the engine's Press_AB click; a successful learn ends
+-- with the Get_Item2 chime.  Headless (no love) is a safe no-op.
+local function beep(game, id)
+  if game and game.data then
+    Sound.play(game.data, id or "Press_AB")
+  end
+end
+
+function MoveRelearn:update(dt)
+  self.tick = (self.tick or 0) + (dt or 0)
+  local input = self.game.input
+  if self.forgetting then
+    local n = #self.mon.moves + 1 -- moves + CANCEL
+    self:navRepeat(dt, "up", function()
+      self.forgetting.index = self.forgetting.index > 1
+        and self.forgetting.index - 1 or n
+    end)
+    self:navRepeat(dt, "down", function()
+      self.forgetting.index = self.forgetting.index < n
+        and self.forgetting.index + 1 or 1
+    end)
+    if input:wasPressed("b") then
+      beep(self.game)
+      self.forgetting = nil
+    elseif input:wasPressed("a") then
+      beep(self.game)
+      if self.forgetting.index > #self.mon.moves then
+        self.forgetting = nil -- CANCEL back to the relearn list
+        return
+      end
+      local old = self.mon.moves[self.forgetting.index]
+      if isHM(self.game.data, old.id) and not hmForgettable(self.game) then
+        -- HMCantDeleteText, then back to the forget list
+        local TextBox = Ui.TextBox
+        self.game.stack:push(TextBox.new(self.game,
+          Strings("HM techniques\ncan't be deleted!")))
+        return
+      end
+      local move = self.forgetting.move
+      local slot = self.forgetting.index
+      local mdef = self.game.data.moves[move]
+      local name = self:monName()
+      self.forgetting = nil
+      applyMove(self.game.data, self.mon, move, slot)
+      beep(self.game, "Get_Item2")
+      self:finish(Strings(
+        "1, 2 and... Poof!\f%s forgot\n%s!\fAnd...\f%s learned\n%s!",
+        name, self.game.data.moves[old.id].name, name, mdef.name))
+    end
+    return
+  end
+  local n = #self.list
+  if n == 0 then
+    -- The RELEARN entry is always injected out of battle, so an empty list
+    -- here is rare (a mon with nothing left to learn after a move was
+    -- removed from its learnset).  It reads "No moves to relearn." in the
+    -- dialogue box below (no move list box); any button exits cleanly.
+    if input:wasPressed("a") or input:wasPressed("b") then
+      beep(self.game)
+      self.game.stack:pop()
+    end
+    return
+  end
+  self:navRepeat(dt, "up", function() self.index = math.max(1, self.index - 1) end)
+  self:navRepeat(dt, "down", function() self.index = math.min(n, self.index + 1) end)
+  if input:wasPressed("b") then
+    beep(self.game)
+    self.game.stack:pop()
+  elseif input:wasPressed("a") then
+    beep(self.game)
+    local entry = self.list[self.index]
+    if #self.mon.moves < 4 then
+      applyMove(self.game.data, self.mon, entry.move)
+      beep(self.game, "Get_Item2")
+      self:finish(Strings("%s learned\n%s!", self:monName(), entry.name))
+    else
+      self.forgetting = { move = entry.move, index = 1 }
+    end
+  end
+  -- keep the cursor inside the visible window
+  if n > ROWS then
+    if self.index < self.scroll + 1 then self.scroll = self.index - 1 end
+    if self.index > self.scroll + ROWS then self.scroll = self.index - ROWS end
+  end
+end
+
+-- Box is 18 tiles at (2,5), two tiles wider than MoveLearnMenu's forget
+-- list so each row has room for a PP column.  The engine's text
+-- convention pads 8px inside the box, so text clips at the inner right
+-- edge: 152.  The GB font is a flat 8px/glyph.
+--
+-- Each relearn row is three zones: the learned-at level ("LV" + digits,
+-- the number left-aligned against "LV" like the engine's PrintLevel,
+-- no padding) at the row's left, the move name starting right after the
+-- level digits (a name wider than the window scrolls as a ticker; the
+-- level never moves), and the learned PP ("PP%2d", 4 glyphs)
+-- right-aligned, which never scrolls.  A fixed gap separates the level
+-- from the name, and the name window from the PP column.
+local BOX_TX, BOX_TY, BOX_TW, BOX_TH = 2, 5, 18, 7
+local CLIP_X = 24 -- 8px in from the widened box's inner edge (16)
+local NAME_GAP = 8 -- gap between the level digits and the move name
+local PP_GAP = 8 -- gap between the name window and the right-aligned PP
+local PP_W = 32 -- "PP%2d" = 4 glyphs at 8px
+local PP_X = 152 - PP_W
+local FORGET_NAME_W = PP_X - CLIP_X - PP_GAP
+local DIALOGUE_X = 8
+local DIALOGUE_W = 144 -- 18 interior tiles in the 20-tile dialogue box
+
+-- Ticker hold/scroll pacing: hold at each end so the player can read the
+-- whole name, scroll at 16px/s (half a second per glyph).
+local TICKER_HOLD = 1.6
+local TICKER_SPEED = 16
+
+-- Pure (mod.exports.tickerOffset for headless tests): horizontal offset
+-- for an overflowing label at time t (seconds).  Cycle: hold at 0, scroll
+-- out to -overflow, hold, scroll back to 0.  Labels that fit (overflow <=
+-- 0) are static.
+function MoveRelearn.tickerOffset(t, overflow)
+  if not (overflow and overflow > 0) then return 0 end
+  local scroll = overflow / TICKER_SPEED
+  local cycle = 2 * TICKER_HOLD + 2 * scroll
+  local p = t % cycle
+  if p < TICKER_HOLD then return 0 end
+  p = p - TICKER_HOLD
+  if p < scroll then return -p * TICKER_SPEED end
+  p = p - scroll
+  if p < TICKER_HOLD then return -overflow end
+  p = p - TICKER_HOLD
+  return -overflow + p * TICKER_SPEED
+end
+
+-- Draw text inside a fixed pixel window without relying on love.graphics'
+-- scissor state.  Gold can render the screen stack through a transformed
+-- framebuffer, and a GPU scissor then has a different coordinate space from
+-- the logical 160x144 screen.  Walking encoded glyphs keeps the clip in the
+-- same coordinate system as Font.draw and works for both tile and TTF pages.
+-- A glyph is drawn only when it fits wholly inside the window, so a marquee
+-- can never bleed into the PP column or the box border.
+local function drawClippedText(text, x, y, width, offset)
+  local Font = Ui.Font
+  local pen = x + (offset or 0)
+  local right = x + width
+  local encode = Font.encode
+  local advanceOf = Font.advanceOf
+  local drawCode = Font.drawCode
+  if type(encode) ~= "function" or type(advanceOf) ~= "function"
+     or type(drawCode) ~= "function" then
+    -- Older engine stubs do not expose the glyph pipeline.  Their labels are
+    -- fixed-width and fit by construction, so preserve the old draw path.
+    Font.draw(text, pen, y)
+    return
+  end
+
+  for _, code in ipairs(encode(text)) do
+    local advance = advanceOf(code)
+    if pen >= x and pen + advance <= right then
+      drawCode(code, pen, y)
+    end
+    pen = pen + advance
+    if pen >= right then break end
+  end
+end
+
+local function drawTickerText(text, x, y, width, tick)
+  local Font = Ui.Font
+  local overflow = Font.width(text) - width
+  local offset = overflow > 0
+    and MoveRelearn.tickerOffset(tick or 0, overflow) or 0
+  drawClippedText(text, x, y, width, offset)
+end
+
+-- Draw one row: the level prefix fixed at the left, the learned PP
+-- right-aligned, then the move name starting right after the level
+-- digits, tickering when the NAME alone overflows its window (which
+-- stops a fixed gap before the PP column).  drawClippedText bounds the
+-- marquee so text never bleeds over the box border or under the PP.
+local function drawRowLabel(game, prefix, name, pp, row, tick)
+  local Font = Ui.Font
+  local y = (5 + row) * 8
+  Font.draw(prefix, CLIP_X, y)
+  Font.draw(("PP%2d"):format(pp), PP_X, y)
+  local x = CLIP_X + Font.width(prefix) + NAME_GAP
+  local clipW = PP_X - x - PP_GAP
+  drawTickerText(name, x, y, clipW, tick)
+end
+
+function MoveRelearn:draw()
+  local Font = Ui.Font
+  local Theme = Ui.Theme
+  if self.forgetting or #self.list > 0 then
+    Font.drawBox(BOX_TX, BOX_TY, BOX_TW, BOX_TH)
+  end
+  love.graphics.setColor(0, 0, 0, 1)
+  if self.forgetting then
+    for i, mv in ipairs(self.mon.moves) do
+      local moveDef = self.game.data.moves[mv.id]
+      drawTickerText((moveDef and moveDef.name) or mv.id,
+                     CLIP_X, (5 + i) * 8, FORGET_NAME_W, self.tick)
+      Font.draw(("PP%2d"):format(mv.pp or 0), PP_X, (5 + i) * 8)
+    end
+    Font.draw(Strings("CANCEL"), CLIP_X, (6 + #self.mon.moves) * 8)
+    Font.drawCode(CURSOR, CLIP_X - 8, (5 + self.forgetting.index) * 8)
+    Font.drawBox(0, 12, 20, 6)
+    drawClippedText(Strings("Which move should"), DIALOGUE_X, 14 * 8,
+                    DIALOGUE_W)
+    drawClippedText(Strings("be forgotten?"), DIALOGUE_X, 16 * 8,
+                    DIALOGUE_W)
+  elseif #self.list == 0 then
+    -- No move list box: just the message in the dialogue box below (any
+    -- button exits, handled in update).
+    Font.drawBox(0, 12, 20, 6)
+    drawClippedText(Strings("No moves to"), DIALOGUE_X, 14 * 8, DIALOGUE_W)
+    drawClippedText(Strings("relearn."), DIALOGUE_X, 16 * 8, DIALOGUE_W)
+  else
+    local last = math.min(#self.list, self.scroll + ROWS)
+    for i = self.scroll + 1, last do
+      local e = self.list[i]
+      local prefix = e.egg and Strings("EGG") or ("LV%d"):format(e.level)
+      drawRowLabel(self.game, prefix, e.name, e.pp,
+                   i - self.scroll, self.tick)
+    end
+    Font.drawCode(CURSOR, CLIP_X - 8, (5 + self.index - self.scroll) * 8)
+    -- moreArrow ($EE): more moves below the visible window, sitting on the
+    -- box's bottom border (the Menu/ListMenu pattern)
+    if #self.list > ROWS and self.scroll + ROWS < #self.list then
+      Font.drawCode(Theme.moreArrow,
+        (BOX_TX + BOX_TW - 2) * 8, (BOX_TY + BOX_TH - 1) * 8)
+    end
+    Font.drawBox(0, 12, 20, 6)
+    drawClippedText(Strings("Relearn which"), DIALOGUE_X, 14 * 8,
+                    DIALOGUE_W)
+    drawClippedText(Strings("move?"), DIALOGUE_X, 16 * 8, DIALOGUE_W)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- ---------- FireRed / LeafGreen (Gen 3) ----------
+--
+-- FireRed's party menu (src/ui/game3/party_menu.lua) is a module singleton
+-- with no ui.party.submenu hook: the field action popup is a list of action
+-- ids rebuilt on every A press in "list" mode.  The adapter wraps its
+-- handleInput to append RELEARN before CANCEL and to catch A on that row,
+-- and opens the game's own Move Relearner screen (src/ui/game3/
+-- move_relearner.lua, the Two Island tutor's UI, pokefirered learn_move.c)
+-- for the chosen mon.  That screen already lists level-up moves at or below
+-- the mon's level minus known moves, asks which move to forget through the
+-- summary screen, and prints the ROM's own text.
+
+local GEN3_ACTION = "RELEARN"
+-- The popup draws each row through a local sCursorOptions lookup that
+-- asserts on unknown ids.  While it draws, the RELEARN row borrows STORE's
+-- slot (a PC/daycare-only option the field popup never lists) and the
+-- lookup for that slot returns the RELEARN label.
+local GEN3_LABEL_ID = "STORE"
+local GEN3_LABEL_INDEX = 14 -- pokefirered/src/data/party_menu.h:1059
+-- Originals are parked on the engine module so a hot reload re-wraps the
+-- vanilla functions instead of stacking wrappers.
+local GEN3_VANILLA = "_relearnMovesVanilla"
+
+-- Pure (mod.exports.injectGen3Actions for headless tests): add RELEARN
+-- before CANCEL in FireRed's field action list.  Only the field shape
+-- ({ SUMMARY, [field moves], SWITCH, [ITEM], CANCEL }) qualifies: battle
+-- lists open with SHIFT / SEND OUT, the double-battle and multi-choice
+-- lists carry no SWITCH, and an egg has nothing to relearn.
+local function injectGen3Actions(actions, mon)
+  if type(actions) ~= "table" or actions[1] ~= "SUMMARY" then return actions end
+  if mon and (mon.isEgg == true or mon.egg == true) then return actions end
+  local hasSwitch, cancelAt = false, nil
+  for i, act in ipairs(actions) do
+    if act == GEN3_ACTION then return actions end
+    if act == "SWITCH" then hasSwitch = true end
+    if act == "CANCEL" then cancelAt = i end
+  end
+  if not (hasSwitch and cancelAt) then return actions end
+  table.insert(actions, cancelAt, GEN3_ACTION)
+  return actions
+end
+
+local function gen3Se(id)
+  pcall(function() require("src.core.game3.audio").playSe(id) end)
+end
+
+-- The party icons are OAM sprites that draw whatever screen is on top, so
+-- they come down before the relearner opens (what SUMMARY does through the
+-- party menu's local destroy_party_oam) and PartyMenu.reloadSprites puts
+-- them back.
+local function hideGen3PartySprites(PM, Oam)
+  local function destroy(id)
+    if id ~= nil then Oam.destroySprite(id) end
+  end
+  for _, slot in pairs(PM._oam or {}) do
+    destroy(slot.mon)
+    destroy(slot.ball)
+    destroy(slot.status)
+    destroy(slot.item)
+  end
+  destroy(PM._summaryIcon)
+  PM._oam = nil
+  PM._summaryIcon = nil
+end
+
+-- FireRed's egg moves for a mon: FRLG keeps gEggMoves on the base form
+-- only, so the list is the mon's own species plus its egg species
+-- (pokefirered daycare.c GetEggSpecies), minus known moves and anything
+-- already in `list`.  Appends to `list` in place (move ids) and returns it.
+local function appendGen3EggMoves(g3, mon, list)
+  local Pokemon = g3.Pokemon
+  if not mon or Pokemon.isEgg(mon) then return list end
+  local species = tonumber(Pokemon.speciesOf(mon))
+  if not species then return list end
+  local seen = {}
+  for _, id in ipairs(list) do seen[id] = true end
+  for slot = 1, 4 do
+    local id = tonumber(Pokemon.moveIdAt(mon, slot))
+    if id then seen[id] = true end
+  end
+  local base = tonumber(g3.Breeding.eggSpecies(species))
+  for _, from in ipairs({ species, base ~= species and base or nil }) do
+    for _, raw in ipairs(Pokemon.eggMoves(from) or {}) do
+      local id = tonumber(raw)
+      if id and id > 0 and not seen[id] then
+        seen[id] = true
+        list[#list + 1] = id
+      end
+    end
+  end
+  return list
+end
+
+local function openGen3Relearner(g3)
+  local PM = g3.PartyMenu
+  local mon = PM._party and PM._party[PM.cursor]
+  gen3Se(5)
+  if not mon then
+    PM.mode = "list"
+    return
+  end
+  -- Egg moves join the list only for this mod's RELEARN session, so the
+  -- Two Island tutor keeps its vanilla level-up list.
+  g3.eggSession = mon
+  if #g3.MoveLearn.relearnableMoves(mon) == 0 then
+    g3.eggSession = nil
+    -- The dismissed message drops back to the party list.
+    PM.showMessage(Strings("No moves to relearn."))
+    return
+  end
+  PM.mode = "list"
+  hideGen3PartySprites(PM, g3.Oam)
+  g3.Relearner.show(mon, {
+    session = PM._session,
+    onDone = function()
+      g3.eggSession = nil
+      PM.mode = "list"
+      if PM.open then PM.reloadSprites() end
+    end,
+  })
+end
+
+local function installGen3(mod)
+  local function need(name)
+    local ok, module = pcall(require, name)
+    if ok and type(module) == "table" then return module end
+    return nil
+  end
+  local g3 = {
+    PartyMenu = need("src.ui.game3.party_menu"),
+    Relearner = need("src.ui.game3.move_relearner"),
+    MoveLearn = need("src.core.game3.move_learn"),
+    Pokemon = need("src.core.game3.pokemon"),
+    RomText = need("src.core.game3.rom_text"),
+    Oam = need("src.core.game3.oam"),
+    Breeding = need("src.core.game3.breeding"),
+  }
+  for name, module in pairs(g3) do
+    if not module then
+      error(("[relearn_moves] FireRed module %s is missing"):format(name), 0)
+    end
+  end
+  local PM, RomText, Pokemon = g3.PartyMenu, g3.RomText, g3.Pokemon
+  local MoveLearn = g3.MoveLearn
+
+  local vanilla = PM[GEN3_VANILLA]
+  if not vanilla then
+    vanilla = { handleInput = PM.handleInput, draw = PM.draw }
+    PM[GEN3_VANILLA] = vanilla
+  end
+  local vanillaHm = Pokemon[GEN3_VANILLA]
+  if not vanillaHm then
+    vanillaHm = Pokemon.isHmMove
+    Pokemon[GEN3_VANILLA] = vanillaHm
+  end
+
+  local vanillaRelearnable = MoveLearn[GEN3_VANILLA]
+  if not vanillaRelearnable then
+    vanillaRelearnable = MoveLearn.relearnableMoves
+    MoveLearn[GEN3_VANILLA] = vanillaRelearnable
+  end
+
+  -- The native relearner reads its list through relearnableMoves on open
+  -- and again after a cancelled learn; during a RELEARN session the egg
+  -- moves ride along after the level-up moves.
+  function MoveLearn.relearnableMoves(mon, ...)
+    local list = vanillaRelearnable(mon, ...)
+    if mon ~= nil and mon == g3.eggSession then
+      return appendGen3EggMoves(g3, mon, list)
+    end
+    return list
+  end
+
+  function PM.handleInput(input)
+    if PM.mode == "action" and input and input:wasPressed("a")
+        and PM.ACTIONS[PM.actionCursor] == GEN3_ACTION then
+      return openGen3Relearner(g3)
+    end
+    local before = PM.mode
+    local result = vanilla.handleInput(input)
+    if before == "list" and PM.mode == "action" and not PM._battle then
+      injectGen3Actions(PM.ACTIONS, PM._party and PM._party[PM.cursor])
+    end
+    return result
+  end
+
+  function PM.draw(...)
+    local actions = PM.ACTIONS
+    local at
+    if PM.mode == "action" and type(actions) == "table" then
+      for i, act in ipairs(actions) do
+        if act == GEN3_ACTION then at = i break end
+      end
+    end
+    if not at then return vanilla.draw(...) end
+    local romAt = RomText.at
+    actions[at] = GEN3_LABEL_ID
+    RomText.at = function(name, i, ...)
+      if name == "sCursorOptions" and i == GEN3_LABEL_INDEX then
+        return Strings(GEN3_ACTION)
+      end
+      return romAt(name, i, ...)
+    end
+    local ok, err = pcall(vanilla.draw, ...)
+    RomText.at = romAt
+    actions[at] = GEN3_ACTION
+    if not ok then error(err, 0) end
+  end
+
+  -- HM parity with the Gen 1 / Gold flows: an HM can be replaced when a
+  -- full moveset learns a move (RELEARN, level-up, TM, tutor).  FireRed
+  -- gates that in three places -- the summary screen's forget pick, the
+  -- learn-move flow, and Pokemon.replaceMove -- all through isHmMove, and
+  -- move learning is its only caller.
+  Pokemon.isHmMove = function() return false end
+
+  mod.exports.injectGen3Actions = injectGen3Actions
+  mod.exports.gen3 = {
+    action = GEN3_ACTION,
+    labelId = GEN3_LABEL_ID,
+    labelIndex = GEN3_LABEL_INDEX,
+    vanillaIsHmMove = vanillaHm,
+    vanillaRelearnable = vanillaRelearnable,
+    appendEggMoves = function(mon, list) return appendGen3EggMoves(g3, mon, list or {}) end,
+  }
+end
+
+return function(mod)
+  if mod.generation == 3 then return installGen3(mod) end
+
+  Ui = mod.ui
+  mod.exports.buildRelearnable = buildRelearnable
+  mod.exports.eggMoveSpecies = eggMoveSpecies
+  mod.exports.applyMove = applyMove
+  mod.exports.injectSubmenu = injectSubmenu
+  mod.exports.tickerOffset = MoveRelearn.tickerOffset
+  mod.exports.textLayout = {
+    dialogueWidth = DIALOGUE_W,
+    forgetNameWidth = FORGET_NAME_W,
+  }
+  mod.exports.HM_MOVES = HM_MOVES
+  mod.exports.GEN2_HM_MOVES = GEN2_HM_MOVES
+  mod.exports.isHM = isHM
+  mod.exports.hmForgettable = hmForgettable
+
+  mod.content.screens:register("MoveRelearn", { new = MoveRelearn.new })
+  mod.content.screens:override("MoveLearnMenu", {
+    new = unlockedMoveLearn,
+  })
+
+  mod.hooks:wrap("ui.party.submenu", function(next, game, items, mon, ctx)
+    items = next(game, items, mon, ctx)
+    return injectSubmenu(game and game.data, items, mon, ctx)
+  end)
+end
