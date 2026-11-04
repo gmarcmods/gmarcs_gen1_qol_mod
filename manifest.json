@@ -1,7 +1,7 @@
 {
   "id": "gmarcs_gen1_qol_mod",
   "name": "Gmarc's Gen 1 QoL Mod",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",
@@ -26,11 +26,12 @@
     "trade_evolutions_gen1",
     "unique_menu_icons",
     "useful_bag",
-    "widescreen_menus_gen1"
+    "widescreen_menus_gen1",
+    "widescreen_battle_intro"
   ],
   "affects_link": false,
   "github": "gmarcmods/gmarcs_gen1_qol_mod",
-  "description": "One install for Red, Blue and Yellow: icons, touch buttons, run mode, the Gen II EXP bar and Pack, Gen 3 boxes, useful bag, reusable TMs, trade evolutions by level, the five-move comparison, move relearn, widescreen menus, HM anywhere, all encounters from the three games, plus a caught icon and place names.",
+  "description": "One install for Red, Blue and Yellow: icons, touch buttons, run mode, the Gen II EXP bar and Pack, Gen 3 boxes, useful bag, reusable TMs, trade evolutions by level, fullscreen battle intros, the five-move comparison, move relearn, widescreen menus, HM anywhere, all encounters from the three games, plus a caught icon and place names.",
   "games": [
     "gen1"
   ]

@@ -9,6 +9,7 @@ Twelve quality of life mods for Red, Blue and Yellow, packed into one install.
 - **Touch Tools** — on-screen speed, save, load, colour, zoom and voxel buttons.
 - **Run Mode** — hold or toggle B to run.
 - **Quality of Life** — the Gen II EXP bar, the Gen II Pack, field-move prompts, a caught icon on the battle HUD and place names when you enter a town or route.
+- **Widescreen Battle Intro** — fullscreen battle flashes and poison pulses, with optional flashless intros and black battle outros.
 - **Gen 3 Box** — Ruby/Sapphire-style PC boxes.
 - **Useful Bag** — bigger pockets and a sortable, fullscreen bag.
 - **Reusable Machines** — TMs are reusable and HM moves can be forgotten.
