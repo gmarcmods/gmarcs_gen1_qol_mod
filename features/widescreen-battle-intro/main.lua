@@ -119,6 +119,17 @@ end
 -- full-window rect); an empty list means the letterbox already covers the
 -- window, so there is nothing to add and the engine's rect is the whole
 -- flash (the 4:3 / zoomed cases, vanilla unchanged).
+-- Non-overlapping complement: corners must receive the veil only once.
+local function outsideRect(ww,wh,x,y,w,h)
+  local x0,y0=math.max(0,math.min(ww,x)),math.max(0,math.min(wh,y))
+  local x1,y1=math.max(0,math.min(ww,x+w)),math.max(0,math.min(wh,y+h))
+  local out={}
+  local function add(a,b,c,d)if c>0 and d>0 then out[#out+1]={a,b,c,d}end end
+  add(0,0,x0,wh);add(x1,0,ww-x1,wh)
+  add(x0,0,x1-x0,y0);add(x0,y1,x1-x0,wh-y1)
+  return out
+end
+
 local function letterboxBands(self)
   local g = love and love.graphics
   if not (g and g.getDimensions and g.getPixelDimensions) then return nil end
@@ -133,16 +144,7 @@ local function letterboxBands(self)
   local vpw, vph = uiw * Sp / dpiX, uih * Sp / dpiY
   local ox = math.floor((pw - uiw * Sp) / 2) / dpiX
   local oy = math.floor((ph - uih * Sp) / 2) / dpiY
-  local bands = {}
-  if ox > 1e-6 then bands[#bands + 1] = { 0, 0, ox, wh } end
-  if oy > 1e-6 then bands[#bands + 1] = { 0, 0, ww, oy } end
-  if ww - (ox + vpw) > 1e-6 then
-    bands[#bands + 1] = { ox + vpw, 0, ww - ox - vpw, wh }
-  end
-  if wh - (oy + vph) > 1e-6 then
-    bands[#bands + 1] = { 0, oy + vph, ww, wh - oy - vph }
-  end
-  return bands
+  return outsideRect(ww,wh,ox,oy,vpw,vph)
 end
 
 -- The wipe style for a battle context, with or without the flashless
@@ -425,25 +427,40 @@ return function(mod)
     end
 
     local Renderer = require("src.render.Renderer")
+    local originalWipe=Renderer.drawBattleWipe
+    if originalWipe then
+      function Renderer:drawBattleWipe(wipe,_,_,ox,oy,vpw,vph,sx,sy)
+        local ww,wh=love.graphics.getDimensions()
+        return originalWipe(self,wipe,ww,wh,ox,oy,vpw,vph,sx,sy,0,0)
+      end
+    end
     local originalEndFrame = Renderer.endFrame
     function Renderer.endFrame(self, ...)
       local result = originalEndFrame(self, ...)
       local flash = activeFlash(self, mod.game)
-      -- The engine's own screenVeil already painted the battle flash (and
-      -- the post-battle white fade) across the whole window this frame
-      -- (Renderer:endFrame).  Painting again would double-darken the flash,
-      -- so the overlay fires only when the engine drew no veil -- the poison
-      -- pulse, and old-engine / buried-transition flashes.
-      if flash and not self.screenVeil then
+      -- A native veil may stop at an aspect-locked viewport or mobile GB
+      -- rectangle. Add only its uncovered bands, never shade it twice.
+      if flash then
+        local bands=flash.bands
+        if self.screenVeil then
+          local meta=type(result)=='table'and result or nil
+          local FaithfulRes=require('src.core.FaithfulRes')
+          if meta and FaithfulRes.scaleCap()then
+            bands=outsideRect(meta.width,meta.height,meta.gameX,meta.gameY,meta.gameWidth,meta.gameHeight)
+          elseif meta and meta.viewX and meta.viewWidth then
+            bands=outsideRect(meta.width,meta.height,meta.viewX,meta.viewY,meta.viewWidth,meta.viewHeight)
+          else bands={}end -- older engines with no rect metadata
+        end
         local g = love and love.graphics
         if g and g.getDimensions and g.setColor and g.rectangle then
           g.push("all")
           g.setShader()
+          g.origin();g.setScissor()
           g.setColor(flash.shade, flash.shade, flash.shade, flash.alpha)
-          if flash.bands then
+          if bands then
             -- poison pulse: the overworld's in-canvas rect already darkens
             -- the letterbox square, so only the bands around it are veiled
-            for _, band in ipairs(flash.bands) do
+            for _, band in ipairs(bands) do
               g.rectangle("fill", band[1], band[2], band[3], band[4])
             end
           else
@@ -470,6 +487,7 @@ return function(mod)
   mod.exports.flashFor = flashFor
   mod.exports.poisonFlash = poisonFlash
   mod.exports.letterboxBands = letterboxBands
+  mod.exports.outsideRect = outsideRect
   mod.exports.activeFlash = activeFlash
   mod.exports.styleFor = styleFor
   mod.exports.toggleRow = toggleRow

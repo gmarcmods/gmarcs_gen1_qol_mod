@@ -2,7 +2,7 @@
   "product": {
     "id": "gmarcs_gen1_qol_mod",
     "name": "Gmarc's Gen 1 QoL Mod",
-    "version": "1.1.4"
+    "version": "1.1.5"
   },
   "generated_by": "tools/assemble.py",
   "features": [
@@ -73,11 +73,11 @@
     {
       "name": "widescreen-battle-intro",
       "source": "gen1/widescreen-battle-intro",
-      "version": "1.6.0",
+      "version": "1.6.1",
       "options": null,
       "priority": 100,
-      "commit": "42241b9b48d0",
-      "digest": "fb1f54102bebfd55a5ad13ebcaa6f5e1db8037c24417e80385c0ceb573c6193f"
+      "commit": "88fcb59547b5",
+      "digest": "baa61abe73a311ee597d5970f6fd60a791952172bdb1150bec911346a9214027"
     },
     {
       "name": "all-encounters",
