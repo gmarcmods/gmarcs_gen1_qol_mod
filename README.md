@@ -1,7 +1,7 @@
 # Gmarc's Gen 1 QoL Mod
 
 A [gen1recomp](https://github.com/bryanthaboi/gen1recomp) mod.
-Twelve quality of life mods for Red, Blue and Yellow, packed into one install.
+Fourteen quality of life features for Red, Blue and Yellow, packed into one install.
 
 ## Features
 
@@ -51,3 +51,5 @@ work is here without the credit you want, tell me and I'll fix it.
 
 Import the ZIP in the mod list, enable it for Red, Blue or Yellow, and restart.
 Disable the separate mods it replaces — they can't run together.
+
+- **Widescreen Battle Intro source** — [Nexhas28/gen1recomp-widescreen-battle-intro](https://github.com/Nexhas28/gen1recomp-widescreen-battle-intro).

@@ -363,8 +363,8 @@ return function(mod)
     }
   end
 
-  local FLASHLESS_KEY = "flashless_intros"
-  local OUTRO_KEY = "black_outro"
+  local FLASHLESS_KEY = "widescreen-battle-intro.flashless_intros"
+  local OUTRO_KEY = "widescreen-battle-intro.black_outro"
   local flashless = optionPair(FLASHLESS_KEY, false)
   local outro = optionPair(OUTRO_KEY, true)
 

@@ -49,7 +49,14 @@
       "name": "widescreen-battle-intro",
       "source": "gen1/widescreen-battle-intro",
       "priority": 100,
-      "notes": "fullscreen battle flashes and poison pulses, flashless intros and black outros"
+      "notes": "fullscreen battle flashes and poison pulses, flashless intros and black outros",
+      "patches": [
+        {
+          "file": "main.lua",
+          "find": "local FLASHLESS_KEY = \"flashless_intros\"\n  local OUTRO_KEY = \"black_outro\"",
+          "replace": "local FLASHLESS_KEY = \"widescreen-battle-intro.flashless_intros\"\n  local OUTRO_KEY = \"widescreen-battle-intro.black_outro\""
+        }
+      ]
     },
     {
       "name": "gen3-box",
